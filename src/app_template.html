@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PO to SO Converter — Good Shepherd Manufacturing Corp</title>
+<style>
+  :root {
+    --ready: #1e8e3e; --ready-bg: #e6f4ea;
+    --review: #b06000; --review-bg: #fef7e0;
+    --blocked: #c5221f; --blocked-bg: #fce8e6;
+    --border: #d7d7d7; --bg: #f6f7f8; --panel: #ffffff; --text: #202124; --muted: #5f6368;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 20px; font-size: 13px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .step-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #1a73e8; color: #fff; font-size: 12px; font-weight: 600; }
+  select, input[type=file], button { font-family: inherit; font-size: 14px; }
+  select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; min-width: 260px; }
+  button { cursor: pointer; border: none; border-radius: 6px; padding: 9px 16px; font-weight: 600; }
+  button.primary { background: #1a73e8; color: #fff; }
+  button.primary:disabled { background: #a9c6f5; cursor: not-allowed; }
+  button.secondary { background: #fff; border: 1px solid var(--border); color: var(--text); }
+  button.small { padding: 5px 10px; font-size: 12px; font-weight: 500; }
+  .dropzone { border: 2px dashed var(--border); border-radius: 8px; padding: 30px; text-align: center; color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s; }
+  .dropzone.drag { border-color: #1a73e8; background: #eef4fe; }
+  .dropzone small { display: block; margin-top: 6px; }
+  #fileList { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .banner { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 10px; }
+  .banner.ok { background: var(--ready-bg); color: var(--ready); }
+  .banner.warn { background: var(--review-bg); color: var(--review); }
+  .banner.missing { background: var(--blocked-bg); color: var(--blocked); }
+  .summary-bar { display: flex; gap: 18px; align-items: center; font-size: 14px; margin: 14px 0; font-weight: 600; }
+  .chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .3px; }
+  .chip.READY { background: var(--ready-bg); color: var(--ready); }
+  .chip.REVIEW { background: var(--review-bg); color: var(--review); }
+  .chip.BLOCKED { background: var(--blocked-bg); color: var(--blocked); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+  tr.po-row { cursor: pointer; }
+  tr.po-row:hover { background: #fafafa; }
+  .reason-text { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .reason-text.BLOCK { color: var(--blocked); }
+  .reason-text.REVIEW { color: var(--review); }
+  .detail-row td { background: #fbfbfb; padding: 0; }
+  .detail-inner { padding: 12px 20px; }
+  .line-table th, .line-table td { padding: 5px 8px; font-size: 12px; }
+  .addsku-form { background: #fff8e1; border: 1px solid #f0d98c; border-radius: 6px; padding: 10px; margin-top: 8px; font-size: 12px; }
+  .addsku-form label { display: block; margin-top: 6px; color: var(--muted); }
+  .addsku-form input { width: 100%; padding: 5px 7px; border: 1px solid var(--border); border-radius: 4px; margin-top: 2px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #exceptionList { white-space: pre-wrap; font-family: Consolas, monospace; font-size: 12px; background: #fbfbfb; border: 1px solid #eee; border-radius: 6px; padding: 12px; max-height: 320px; overflow: auto; }
+  .warn-strip { background: var(--blocked-bg); color: var(--blocked); padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-top: 10px; }
+  .disabled-note { color: var(--muted); font-size: 12px; }
+  footer { color: var(--muted); font-size: 11px; margin-top: 30px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>PO → SO Converter</h1>
+<div class="subtitle">Good Shepherd Manufacturing Corp — converts a retailer Purchase Order into the Sales Order Excel format. Runs entirely in this browser tab; nothing is uploaded anywhere.</div>
+
+<div class="card">
+  <h2><span class="step-num">0</span> SKU list (sku_master.xlsx)</h2>
+  <div id="skuBanner" class="banner missing">SKU list not loaded — every PO will be REVIEW until you load it, and unknown SKUs will be BLOCKED (that check still runs).</div>
+  <input type="file" id="skuFileInput" accept=".xlsx">
+  <div class="hint">Pick the <code>sku_master.xlsx</code> file from the shared drive (next to this app). This app does not read your disk on its own — browsers don't allow that without you choosing the file.</div>
+</div>
+
+<div class="card">
+  <h2><span class="step-num">1</span> Choose customer</h2>
+  <select id="customerSelect">
+    <option value="">— Select customer —</option>
+    <option value="handyman">Robinsons Handyman</option>
+    <option value="puregold">Puregold Price Club</option>
+    <option value="metro">Metro Retail Stores Group</option>
+    <option value="diy">The D.I.Y Shop Corp</option>
+  </select>
+  <div class="hint">Don't mix customers in one batch — each upload is parsed with one customer's layout rules.</div>
+</div>
+
+<div class="card">
+  <h2><span class="step-num">2</span> Drop the PO files here</h2>
+  <div id="dropzone" class="dropzone">
+    Drag &amp; drop files (or the whole folder) here, or click to choose files
+    <small id="acceptHint"></small>
+  </div>
+  <input type="file" id="fileInput" multiple style="display:none">
+  <div id="fileList"></div>
+  <div class="actions" style="margin-top:12px;">
+    <button class="primary" id="convertBtn" disabled>Convert</button>
+    <span id="convertStatus" class="disabled-note"></span>
+  </div>
+</div>
+
+<div class="card" id="resultsCard" style="display:none;">
+  <h2><span class="step-num">3</span> Results</h2>
+  <div class="summary-bar" id="summaryBar"></div>
+  <table id="resultsTable">
+    <thead>
+      <tr><th></th><th>File</th><th>PO#</th><th>Branch</th><th># Lines</th><th>Total Qty</th><th>Total Amount</th><th>Status</th></tr>
+    </thead>
+    <tbody id="resultsBody"></tbody>
+  </table>
+</div>
+
+<div class="card" id="downloadCard" style="display:none;">
+  <h2><span class="step-num">4</span> Download Excel</h2>
+  <div class="actions">
+    <button class="primary" id="downloadBtn">Download SO Excel</button>
+    <button class="secondary" id="copyExceptionsBtn">Copy exception list</button>
+  </div>
+  <div id="blockedWarning"></div>
+  <div id="exceptionList" style="margin-top:14px;"></div>
+</div>
+
+<div class="card" id="skuSessionCard" style="display:none;">
+  <h2>New SKUs this session</h2>
+  <table>
+    <thead><tr><th>Customer</th><th>Customer SKU</th><th>Megabox Item Code</th><th>Description</th></tr></thead>
+    <tbody id="newSkuBody"></tbody>
+  </table>
+  <div class="actions" style="margin-top:12px;">
+    <button class="secondary" id="downloadSkuMasterBtn">Download updated SKU list</button>
+    <button class="secondary" id="downloadSkuReportBtn">Download new SKU report</button>
+  </div>
+  <div class="warn-strip">Adding a SKU here only updates this app's own checking list. It does NOT create the item in the ERP. If the item doesn't exist in the ERP yet, the SO import will still fail — create it in the ERP first, re-export sku_master.xlsx, then convert.</div>
+</div>
+
+<footer>PO2SO Converter — deterministic parsers only, no AI/OCR extraction. See README.md for the full workflow.</footer>
+
+<script>
+//__XLSX_LIB__//
+</script>
+<script>
+//__PDFJS_LIB__//
+</script>
+<script>
+var PDF_WORKER_B64 = "__PDFJS_WORKER_B64__";
+(function () {
+  var byteChars = atob(PDF_WORKER_B64);
+  var bytes = new Uint8Array(byteChars.length);
+  for (var i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  var blob = new Blob([bytes], { type: "application/javascript" });
+  pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+})();
+</script>
+<script>
+//__PARSERS__//
+</script>
+<script>
+(function () {
+  "use strict";
+
+  var state = {
+    customerKey: null,
+    files: [],
+    pos: [],
+    skuEntries: [],
+    skuIndex: null,
+    sessionNewSkus: [] // {customer, sku, itemCode, description}
+  };
+
+  var els = {
+    skuFileInput: document.getElementById("skuFileInput"),
+    skuBanner: document.getElementById("skuBanner"),
+    customerSelect: document.getElementById("customerSelect"),
+    dropzone: document.getElementById("dropzone"),
+    acceptHint: document.getElementById("acceptHint"),
+    fileInput: document.getElementById("fileInput"),
+    fileList: document.getElementById("fileList"),
+    convertBtn: document.getElementById("convertBtn"),
+    convertStatus: document.getElementById("convertStatus"),
+    resultsCard: document.getElementById("resultsCard"),
+    summaryBar: document.getElementById("summaryBar"),
+    resultsBody: document.getElementById("resultsBody"),
+    downloadCard: document.getElementById("downloadCard"),
+    downloadBtn: document.getElementById("downloadBtn"),
+    copyExceptionsBtn: document.getElementById("copyExceptionsBtn"),
+    blockedWarning: document.getElementById("blockedWarning"),
+    exceptionList: document.getElementById("exceptionList"),
+    skuSessionCard: document.getElementById("skuSessionCard"),
+    newSkuBody: document.getElementById("newSkuBody"),
+    downloadSkuMasterBtn: document.getElementById("downloadSkuMasterBtn"),
+    downloadSkuReportBtn: document.getElementById("downloadSkuReportBtn")
+  };
+
+  var ACCEPT_BY_CUSTOMER = {
+    handyman: { ext: [".xls"], hint: "Robinsons Handyman PO files (.xls — really XLSX, detected by content)" },
+    puregold: { ext: [".html", ".htm"], hint: "Puregold EDI PO files (.html)" },
+    metro: { ext: [".pdf"], hint: "Metro PO files (.pdf)" },
+    diy: { ext: [".pdf"], hint: "The D.I.Y Shop Corp PO file (.pdf — one file can contain many POs)" }
+  };
+
+  // Try a same-folder auto-load first (works in some browsers under file://,
+  // silently does nothing if the browser blocks local fetch — the manual file
+  // picker below always works regardless).
+  fetch("./sku_master.xlsx").then(function (r) {
+    if (!r.ok) throw new Error("not found");
+    return r.arrayBuffer();
+  }).then(function (buf) {
+    loadSkuMaster(new Uint8Array(buf));
+  }).catch(function () { /* expected under file:// in most browsers */ });
+
+  els.skuFileInput.addEventListener("change", function () {
+    var f = els.skuFileInput.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () { loadSkuMaster(new Uint8Array(reader.result)); };
+    reader.readAsArrayBuffer(f);
+  });
+
+  function loadSkuMaster(bytes) {
+    try {
+      state.skuEntries = POSO.parseSkuMasterWorkbook(bytes);
+      rebuildSkuIndex();
+      renderSkuBanner();
+      if (state.pos.length > 0) runValidationAndRender();
+    } catch (e) {
+      els.skuBanner.className = "banner missing";
+      els.skuBanner.textContent = "Could not read sku_master.xlsx: " + e.message;
+    }
+  }
+
+  function rebuildSkuIndex() {
+    var idx = POSO.buildSkuMasterIndex(state.skuEntries);
+    // session-added SKUs layer on top without needing a re-upload
+    state.sessionNewSkus.forEach(function (e) {
+      idx.map[e.customer.toUpperCase() + "||" + e.sku.trim()] = e;
+    });
+    state.skuIndex = idx;
+  }
+
+  function renderSkuBanner() {
+    if (!state.skuIndex || state.skuEntries.length === 0) {
+      els.skuBanner.className = "banner missing";
+      els.skuBanner.textContent = "SKU list not loaded — every PO will be REVIEW until you load it.";
+      return;
+    }
+    var newest = state.skuIndex.newestDate;
+    var stale = newest ? (Date.now() - newest.getTime()) / 86400000 > 60 : true;
+    var dateStr = newest ? (newest.getUTCMonth() + 1) + "/" + newest.getUTCDate() + "/" + newest.getUTCFullYear() : "unknown";
+    els.skuBanner.className = "banner " + (stale ? "warn" : "ok");
+    els.skuBanner.textContent = "SKU list last updated " + dateStr + (stale ? " — more than 60 days ago, treat unmatched SKUs with extra care." : ".") + " (" + state.skuEntries.length + " SKUs loaded)";
+  }
+
+  els.customerSelect.addEventListener("change", function () {
+    state.customerKey = els.customerSelect.value || null;
+    var info = state.customerKey ? ACCEPT_BY_CUSTOMER[state.customerKey] : null;
+    els.acceptHint.textContent = info ? info.hint : "";
+    state.files = [];
+    renderFileList();
+    updateConvertEnabled();
+  });
+
+  ["dragenter", "dragover"].forEach(function (evt) {
+    els.dropzone.addEventListener(evt, function (e) { e.preventDefault(); els.dropzone.classList.add("drag"); });
+  });
+  ["dragleave", "drop"].forEach(function (evt) {
+    els.dropzone.addEventListener(evt, function (e) { e.preventDefault(); els.dropzone.classList.remove("drag"); });
+  });
+  els.dropzone.addEventListener("drop", function (e) {
+    addFiles(e.dataTransfer.files);
+  });
+  els.dropzone.addEventListener("click", function () { els.fileInput.click(); });
+  els.fileInput.addEventListener("change", function () { addFiles(els.fileInput.files); els.fileInput.value = ""; });
+
+  function addFiles(fileList) {
+    if (!state.customerKey) { alert("Choose a customer first."); return; }
+    var allowedExt = ACCEPT_BY_CUSTOMER[state.customerKey].ext;
+    for (var i = 0; i < fileList.length; i++) {
+      var f = fileList[i];
+      var lower = f.name.toLowerCase();
+      if (allowedExt.some(function (ext) { return lower.endsWith(ext); })) {
+        state.files.push(f);
+      }
+    }
+    renderFileList();
+    updateConvertEnabled();
+  }
+
+  function renderFileList() {
+    els.fileList.textContent = state.files.length === 0 ? "" : state.files.length + " file(s) selected: " + state.files.map(function (f) { return f.name; }).join(", ");
+  }
+
+  function updateConvertEnabled() {
+    els.convertBtn.disabled = !(state.customerKey && state.files.length > 0);
+  }
+
+  els.convertBtn.addEventListener("click", function () {
+    els.convertBtn.disabled = true;
+    els.convertStatus.textContent = "Parsing…";
+    parseAll().then(function () {
+      els.convertStatus.textContent = "";
+      updateConvertEnabled();
+      runValidationAndRender();
+    }).catch(function (e) {
+      els.convertStatus.textContent = "Error: " + e.message;
+      updateConvertEnabled();
+    });
+  });
+
+  async function parseAll() {
+    var pos = [];
+    for (var i = 0; i < state.files.length; i++) {
+      var f = state.files[i];
+      var bytes, text;
+      if (state.customerKey === "puregold") {
+        text = await f.text();
+        pos = pos.concat(POSO.parsePuregold(text, f.name));
+      } else if (state.customerKey === "handyman") {
+        bytes = new Uint8Array(await f.arrayBuffer());
+        pos = pos.concat(POSO.parseHandyman(bytes, f.name));
+      } else if (state.customerKey === "metro") {
+        bytes = new Uint8Array(await f.arrayBuffer());
+        pos = pos.concat(await POSO.parseMetro(bytes, f.name));
+      } else if (state.customerKey === "diy") {
+        bytes = new Uint8Array(await f.arrayBuffer());
+        pos = pos.concat(await POSO.parseDiy(bytes, f.name));
+      }
+    }
+    state.pos = pos;
+  }
+
+  function runValidationAndRender() {
+    POSO.validateBatch(state.customerKey, state.pos, { now: new Date(), skuMasterIndex: state.skuIndex });
+    renderResults();
+  }
+
+  function renderResults() {
+    els.resultsCard.style.display = "";
+    els.downloadCard.style.display = "";
+    var counts = { READY: 0, REVIEW: 0, BLOCKED: 0 };
+    state.pos.forEach(function (po) { counts[po.status]++; });
+    els.summaryBar.innerHTML =
+      '<span class="chip READY">READY ' + counts.READY + '</span>' +
+      '<span class="chip REVIEW">REVIEW ' + counts.REVIEW + '</span>' +
+      '<span class="chip BLOCKED">BLOCKED ' + counts.BLOCKED + '</span>';
+
+    els.resultsBody.innerHTML = "";
+    state.pos.forEach(function (po, idx) {
+      var totalQty = po.lines.reduce(function (a, l) { return a + (l.qty || 0); }, 0);
+      var totalAmt = po.lines.reduce(function (a, l) { return a + (l.totalAmount || 0); }, 0);
+
+      var tr = document.createElement("tr");
+      tr.className = "po-row";
+      tr.innerHTML =
+        "<td>▸</td>" +
+        "<td>" + esc(po.sourceFile) + "</td>" +
+        "<td>" + esc(po.poNumber || "") + "</td>" +
+        "<td>" + esc(po.branch || "") + "</td>" +
+        "<td>" + po.lines.length + "</td>" +
+        "<td>" + fmtNum(totalQty) + "</td>" +
+        "<td>" + fmtMoney(totalAmt) + "</td>" +
+        '<td><span class="chip ' + po.status + '">' + po.status + "</span></td>";
+      els.resultsBody.appendChild(tr);
+
+      var detailTr = document.createElement("tr");
+      detailTr.className = "detail-row";
+      detailTr.style.display = "none";
+      var detailTd = document.createElement("td");
+      detailTd.colSpan = 8;
+      detailTd.appendChild(buildDetail(po, idx));
+      detailTr.appendChild(detailTd);
+      els.resultsBody.appendChild(detailTr);
+
+      tr.addEventListener("click", function () {
+        detailTr.style.display = detailTr.style.display === "none" ? "" : "none";
+        tr.firstChild.textContent = detailTr.style.display === "none" ? "▸" : "▾";
+      });
+    });
+
+    renderExceptionList();
+    renderSkuSessionPanel();
+
+    els.blockedWarning.innerHTML = counts.BLOCKED > 0
+      ? '<div class="warn-strip">' + counts.BLOCKED + " PO(s) were NOT included in the download. Encode those manually or send the file to IT.</div>"
+      : "";
+  }
+
+  function buildDetail(po, idx) {
+    var wrap = document.createElement("div");
+    wrap.className = "detail-inner";
+
+    po.reasons.forEach(function (r) {
+      var d = document.createElement("div");
+      d.className = "reason-text " + r.severity;
+      d.textContent = "(" + r.severity + " " + r.rule + ") " + r.message;
+      wrap.appendChild(d);
+
+      if (r.severity === "BLOCK" && r.rule === 0) {
+        var skuMatch = r.message.match(/Unknown SKU (\S+)/);
+        if (skuMatch) wrap.appendChild(buildAddSkuForm(po, skuMatch[1]));
+      }
+    });
+
+    var table = document.createElement("table");
+    table.className = "line-table";
+    table.innerHTML = "<thead><tr><th>SKU</th><th>Description</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>";
+    var tbody = document.createElement("tbody");
+    po.lines.forEach(function (l) {
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + esc(l.sku || "") + "</td><td>" + esc(l.description || "") + "</td><td>" + fmtNum(l.qty) + "</td><td>" + fmtMoney(l.price) + "</td><td>" + fmtMoney(l.totalAmount) + "</td>";
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function buildAddSkuForm(po, sku) {
+    var line = po.lines.find(function (l) { return l.sku === sku; });
+    var box = document.createElement("div");
+    box.className = "addsku-form";
+    var legalName = POSO.CUSTOMERS[state.customerKey].legalName;
+    box.innerHTML =
+      "<strong>Add SKU " + esc(sku) + "</strong>" +
+      "<label>Customer</label><input type=\"text\" value=\"" + esc(legalName) + "\" disabled>" +
+      "<label>Customer SKU</label><input type=\"text\" value=\"" + esc(sku) + "\" disabled>" +
+      "<label>Description (from PO)</label><input type=\"text\" class=\"descInput\" value=\"" + esc(line ? line.description : "") + "\">" +
+      "<label>Megabox Item Code</label><input type=\"text\" class=\"itemCodeInput\" placeholder=\"required\">" +
+      '<div class="actions" style="margin-top:8px;"><button class="secondary small saveSkuBtn">Save SKU</button></div>';
+    box.querySelector(".saveSkuBtn").addEventListener("click", function () {
+      var itemCode = box.querySelector(".itemCodeInput").value.trim();
+      var description = box.querySelector(".descInput").value.trim();
+      if (!itemCode) { alert("Megabox Item Code is required."); return; }
+      var entry = { customer: legalName, sku: sku, itemCode: itemCode, description: description, dateAdded: todayMMDDYYYY() };
+      state.sessionNewSkus.push(entry);
+      rebuildSkuIndex();
+      runValidationAndRender();
+    });
+    return box;
+  }
+
+  function renderExceptionList() {
+    var lines = [];
+    state.pos.forEach(function (po) {
+      if (po.status === "READY") return;
+      lines.push(po.sourceFile + " — PO# " + (po.poNumber || "?") + " — " + po.status);
+      po.reasons.forEach(function (r) { lines.push("   (" + r.severity + " " + r.rule + ") " + r.message); });
+    });
+    els.exceptionList.textContent = lines.length > 0 ? lines.join("\n") : "No exceptions — every PO is READY.";
+  }
+
+  function renderSkuSessionPanel() {
+    if (state.sessionNewSkus.length === 0) { els.skuSessionCard.style.display = "none"; return; }
+    els.skuSessionCard.style.display = "";
+    els.newSkuBody.innerHTML = "";
+    state.sessionNewSkus.forEach(function (e) {
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + esc(e.customer) + "</td><td>" + esc(e.sku) + "</td><td>" + esc(e.itemCode) + "</td><td>" + esc(e.description) + "</td>";
+      els.newSkuBody.appendChild(tr);
+    });
+  }
+
+  els.copyExceptionsBtn.addEventListener("click", function () {
+    navigator.clipboard.writeText(els.exceptionList.textContent).catch(function () {});
+  });
+
+  els.downloadBtn.addEventListener("click", function () {
+    var wb = POSO.buildWorkbook(state.pos, state.customerKey);
+    XLSX.writeFile(wb, POSO.exportFileName(state.customerKey));
+  });
+
+  els.downloadSkuMasterBtn.addEventListener("click", function () {
+    var allRows = state.skuEntries.concat(state.sessionNewSkus);
+    var wb = XLSX.utils.book_new();
+    var aoa = [["Customer", "Customer SKU", "Megabox Item Code", "Description", "Date Added"]]
+      .concat(allRows.map(function (e) { return [e.customer, e.sku, e.itemCode, e.description, e.dateAdded]; }));
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    var range = XLSX.utils.decode_range(ws["!ref"]);
+    for (var R = 1; R <= range.e.r; R++) {
+      var addr = XLSX.utils.encode_cell({ r: R, c: 1 });
+      if (ws[addr]) { ws[addr].t = "s"; ws[addr].z = "@"; }
+    }
+    XLSX.utils.book_append_sheet(wb, ws, "SKU Master");
+    XLSX.writeFile(wb, "sku_master_updated_" + todayStamp() + ".xlsx");
+  });
+
+  els.downloadSkuReportBtn.addEventListener("click", function () {
+    var wb = XLSX.utils.book_new();
+    var aoa = [["Customer", "Customer SKU", "Megabox Item Code", "Description", "Date Added"]]
+      .concat(state.sessionNewSkus.map(function (e) { return [e.customer, e.sku, e.itemCode, e.description, e.dateAdded]; }));
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, "New SKUs");
+    XLSX.writeFile(wb, "new_sku_report_" + todayStamp() + ".xlsx");
+  });
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmtNum(n) { return n === null || n === undefined ? "" : Number(n).toLocaleString(); }
+  function fmtMoney(n) { return n === null || n === undefined ? "" : "₱" + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function todayMMDDYYYY() { var d = new Date(); return (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear(); }
+  function todayStamp() { var d = new Date(); var p = function (n) { return String(n).padStart(2, "0"); }; return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()); }
+
+  renderSkuBanner();
+})();
+</script>
+</body>
+</html>
